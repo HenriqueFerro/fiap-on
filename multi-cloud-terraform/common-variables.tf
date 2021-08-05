@@ -1,11 +1,11 @@
 #Define application name
 variable "app_name" {
-  type = string
+  type        = string
   description = "Application name"
-  default = "kopicloud"
-}#Define application environment
+  default     = "fiap-on"
+} #Define application environment
 variable "app_environment" {
-  type = string
+  type        = string
   description = "Application environment"
-  default = "demo"
+  default     = "multi-cloud"
 }
