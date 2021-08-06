@@ -67,12 +67,6 @@ variable "instance_count" {
   default     = 1
 }
 
-variable "instance_display_name" {
-  description = "(Updatable) A user-friendly name for the instance. Does not have to be unique, and it's changeable."
-  type        = string
-  default     = "module_instance_flex"
-}
-
 variable "instance_flex_memory_in_gbs" {
   type        = number
   description = "(Updatable) The total amount of memory available to the instance, in gigabytes."
@@ -88,7 +82,7 @@ variable "instance_flex_ocpus" {
 variable "shape" {
   description = "The shape of an instance."
   type        = string
-  default     = "VM.Standard2.1"
+  default     = "VM.Standard.E2.1.Micro"
 }
 
 variable "source_ocid" {
@@ -96,36 +90,9 @@ variable "source_ocid" {
   type        = string
 }
 
-variable "source_type" {
-  description = "The source type for the instance."
-  type        = string
-  default     = "image"
-}
-
 # operating system parameters
 
 variable "ssh_authorized_keys" {
   description = "Public SSH keys path to be included in the ~/.ssh/authorized_keys file for the default user on the instance."
   type        = string
-}
-
-# networking parameters
-
-variable "assign_public_ip" {
-  description = "Whether the VNIC should be assigned a public IP address."
-  type        = bool
-  default     = false
-}
-
-variable "subnet_ocids" {
-  description = "The unique identifiers (OCIDs) of the subnets in which the instance primary VNICs are created."
-  type        = list(string)
-}
-
-# storage parameters
-
-variable "block_storage_sizes_in_gbs" {
-  description = "Sizes of volumes to create and attach to each instance."
-  type        = list(string)
-  default     = [50]
 }

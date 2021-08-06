@@ -1,6 +1,10 @@
-#! /bin/bash
-sudo apt-get update
-sudo apt-get install -y apache2
-sudo systemctl start apache2
-sudo systemctl enable apache2
-echo "<h1>MultiCloud Demo Oracle Cloud</h1>" | sudo tee /var/www/html/index.html
+#!/bin/bash
+sudo yum install httpd -y
+sudo apachectl start
+sudo systemctl enable httpd
+sudo apachectl configtest
+sudo /bin/yum install firewalld -y
+sudo /bin/firewall-offline-cmd --zone=public --add-service=http
+sudo /bin/systemctl enable firewalld
+sudo /bin/systemctl restart firewalld
+sudo echo "<h1>MultiCloud Demo Oracle Cloud</h1>" | sudo tee /var/www/html/index.html

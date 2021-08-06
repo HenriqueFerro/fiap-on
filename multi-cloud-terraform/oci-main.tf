@@ -7,46 +7,130 @@ provider "oci" {
   region           = var.region
 }
 
-module "instance" {
-  source                     = "oracle-terraform-modules/compute-instance/oci"
-  instance_count             = 1 # how many instances do you want?
-  ad_number                  = 1 # AD number to provision instances. If null, instances are provisionned in a rolling manner starting with AD1
-  compartment_ocid           = var.compartment_ocid
-  instance_display_name      = var.instance_display_name
-  source_ocid                = var.source_ocid
-  subnet_ocids               = var.subnet_ocids
-  assign_public_ip           = var.assign_public_ip
-  ssh_authorized_keys        = var.ssh_authorized_keys
-  block_storage_sizes_in_gbs = var.block_storage_sizes_in_gbs
-  shape                      = var.shape
-  user_data                  = file("oci-user-data.sh")
+# Get a list of Availability Domains
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = var.compartment_ocid
 }
 
-/*# * This module will create a Flex Compute Instance, using default values: 1 OCPU, 16 GB memory.
-# * `instance_flex_memory_in_gbs` and ìnstance_flex_ocpus` are not provided: default values will be applied.
-module "instance_flex" {
-  source = "oracle-terraform-modules/compute-instance/oci"
-  # general oci parameters
-  compartment_ocid = var.compartment_ocid
-  #freeform_tags    = var.freeform_tags
-  #defined_tags     = var.defined_tags
-  # compute instance parameters
-  ad_number             = var.instance_ad_number
-  instance_count        = var.instance_count
-  instance_display_name = var.instance_display_name
-  shape                 = var.shape
-  source_ocid           = var.source_ocid
-  source_type           = var.source_type
-  # operating system parameters
-  ssh_authorized_keys = var.ssh_authorized_keys
-  # networking parameters
-  assign_public_ip = var.assign_public_ip
-  subnet_ocids     = var.subnet_ocids
-  # storage parameters
-  block_storage_sizes_in_gbs = var.block_storage_sizes_in_gbs
-}*/
+# Create VCN vcn-teste
+module "vcn" {
+  source       = "oracle-terraform-modules/vcn/oci"
+  version      = "2.3.0"
 
-output "instance_flex" {
+  # general oci parameters
+  compartment_id = var.compartment_ocid
+  region         = var.region
+
+  # vcn parameters
+  create_drg               = false         # boolean: true or false
+  internet_gateway_enabled = true          # boolean: true or false
+  lockdown_default_seclist = true          # boolean: true or false
+  nat_gateway_enabled      = true          # boolean: true or false
+  service_gateway_enabled  = true          # boolean: true or false
+  vcn_cidr                 = "10.0.0.0/16" # VCN CIDR
+  vcn_name                 = "${var.app_name}-${var.app_environment}-vcn"
+  vcn_dns_label            = "${var.app_name}${var.app_environment}"
+}
+
+resource "oci_core_security_list" "webserver_security_list" {
+  #Required
+  compartment_id = var.compartment_ocid
+  vcn_id         = module.vcn.vcn_id
+  display_name   = "${var.app_name}-${var.app_environment}-security_list"
+
+  egress_security_rules {
+    stateless        = false
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
+  }
+
+  ingress_security_rules {
+    stateless   = false
+    source      = "0.0.0.0/0"
+    source_type = "CIDR_BLOCK"
+    # Get protocol numbers from https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml ICMP is 1
+    protocol = "1"
+    # For ICMP type and code see: https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+    icmp_options {
+      type = 3
+      code = 4
+    }
+  }
+
+  ingress_security_rules {
+    stateless   = false
+    source      = "10.0.0.0/16"
+    source_type = "CIDR_BLOCK"
+    # Get protocol numbers from https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml ICMP is 1
+    protocol = "1"
+    # For ICMP type and code see: https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+    icmp_options {
+      type = 3
+    }
+  }
+
+  ingress_security_rules {
+    stateless   = false
+    source      = "0.0.0.0/0"
+    source_type = "CIDR_BLOCK"
+    # Get protocol numbers from https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml TCP is 6
+    protocol = "6"
+    tcp_options {
+      min = 22
+      max = 22
+    }
+  }
+
+  ingress_security_rules {
+    stateless   = false
+    source      = "0.0.0.0/0"
+    source_type = "CIDR_BLOCK"
+    # Get protocol numbers from https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml TCP is 6
+    protocol = "6"
+    tcp_options {
+      min = 80
+      max = 80
+    }
+  }
+}
+
+# Create Public Subnet
+resource "oci_core_subnet" "public-subnet" {
+
+  # Required
+  compartment_id = var.compartment_ocid
+  vcn_id         = module.vcn.vcn_id
+  cidr_block     = "10.0.0.0/24"
+
+  # Optional
+  route_table_id    = module.vcn.ig_route_id
+  security_list_ids = [oci_core_security_list.webserver_security_list.id]
+  display_name      = "${var.app_name}-${var.app_environment}-public-subnet"
+}
+
+resource "oci_core_instance" "linux" {
+  count               = 1
+  compartment_id      = var.compartment_ocid
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  subnet_id           = oci_core_subnet.public-subnet.id
+  display_name        = "${var.app_name}-${var.app_environment}-web-server"
+  shape               = "VM.Standard.E2.1.Micro"
+
+  source_details {
+    source_id   = var.source_ocid
+    source_type = "image"
+  }
+
+  metadata = {
+    ssh_authorized_keys = var.ssh_authorized_keys
+    user_data           = "${base64encode(file("./oci-user-data.sh"))}"
+  }
+}
+
+output "oci-instance" {
   description = "ocid of created instances."
-  value       = module.instance.instances_summary
+  value = {
+    public_ip = oci_core_instance.linux[0].public_ip
+  }
 }
